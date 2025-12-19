@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Message } from "../types";
 import { db } from "./db";
@@ -34,7 +35,7 @@ async function decodeAudioData(
 
 const getApiKey = () => {
   const key = process.env.API_KEY || "";
-  // Очистка ключа от кавычек и пробелов, которые могут попасть из окружения
+  // Очистка ключа от кавычек и пробелов
   return key.replace(/['"]+/g, '').trim();
 };
 
@@ -124,9 +125,20 @@ export const askGemini = async (
     return response.text || "No response from Nexus.";
   } catch (error: any) {
     console.error("Gemini Error:", error);
-    if (error.message?.includes("400")) {
-      return "ОШИБКА 400: Ключ недействителен. Пожалуйста, используйте кнопку 'Обновить ключ' в панели управления.";
+    
+    // Проверка на ошибку TypeError: Failed to fetch (обычно блокировка провайдером)
+    if (error instanceof TypeError || error.message?.includes("Failed to fetch")) {
+      return "ОШИБКА СЕТИ (Failed to fetch): Не удалось связаться с сервером Google. Если вы находитесь в РФ или РБ, для работы нейросети ОБЯЗАТЕЛЬНО включите VPN.";
     }
+
+    if (error.message?.includes("400") || error.message?.includes("INVALID_ARGUMENT")) {
+      return "ОШИБКА 400: Ваш API ключ недействителен. Убедитесь, что в Google AI Studio вы создали ключ для правильного проекта и включили 'Generative Language API'.";
+    }
+
+    if (error.message === "API_KEY_MISSING") {
+      return "КЛЮЧ ОТСУТСТВУЕТ: Пожалуйста, нажмите кнопку 'Настроить ключ' в левой панели.";
+    }
+
     return `ОШИБКА UPLINK: ${error.message}`;
   }
 };
