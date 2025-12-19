@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ChatSession, Message } from '../types';
 import { db } from '../services/db';
@@ -19,14 +20,23 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStoryMode, setIsStoryMode] = useState(false);
   const [messageCount, setMessageCount] = useState(0);
+  const [hasKey, setHasKey] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSessions();
+    checkApiKey();
     if (window.innerWidth >= 1024) setIsSidebarOpen(true);
   }, [user.id]);
+
+  const checkApiKey = async () => {
+    if ((window as any).aistudio?.hasSelectedApiKey) {
+      const selected = await (window as any).aistudio.hasSelectedApiKey();
+      setHasKey(selected);
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -40,13 +50,24 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
   };
 
   const handleUpdateApiKey = async () => {
-    if ((window as any).aistudio) {
+    if ((window as any).aistudio?.openSelectKey) {
       await (window as any).aistudio.openSelectKey();
+      setHasKey(true);
     }
   };
 
   const handleSend = async (e?: React.FormEvent, overridePrompt?: string) => {
     if (e) e.preventDefault();
+    
+    // Проверка ключа перед отправкой
+    if ((window as any).aistudio?.hasSelectedApiKey) {
+      const selected = await (window as any).aistudio.hasSelectedApiKey();
+      if (!selected) {
+        alert("ОШИБКА: Сначала нужно выбрать API ключ. Нажмите кнопку 'Выбрать ключ' в боковой панели.");
+        return;
+      }
+    }
+
     if ((!input.trim() && !selectedImage && !overridePrompt) || isTyping) return;
 
     const userInput = overridePrompt || input.trim();
@@ -83,7 +104,7 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
 
       if (!currentImg && isImageRequest(userInput)) {
         const url = await generateImage(userInput, isStoryMode);
-        aiResponse = url ? "Visualization task completed." : "Failed to render visualization. Check API Key permissions.";
+        aiResponse = url ? "Visualization task completed." : "Failed to render visualization. Check API Key or VPN status.";
         aiImg = url || undefined;
       } else {
         aiResponse = await askGemini(userInput, updatedMessages, user.username, user.isAdmin, isStoryMode, currentImg || undefined);
@@ -137,6 +158,13 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
           </div>
 
           <div className="mt-4 pt-6 border-t border-[#30363d] space-y-3">
+             {!hasKey && (
+               <div className="p-4 bg-red-600/10 border border-red-500/30 rounded-2xl mb-2 animate-pulse">
+                 <p className="text-[9px] font-black text-red-500 uppercase mb-2">Ключ не выбран!</p>
+                 <button onClick={handleUpdateApiKey} className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase rounded-xl shadow-xl transition-all">Выбрать ключ</button>
+               </div>
+             )}
+
              {user.isAdmin && (
                <div className={`px-4 py-2 border rounded-xl mb-4 ${isStoryMode ? 'bg-purple-500/5 border-purple-500/20' : 'bg-blue-500/5 border-blue-500/20'}`}>
                  <div className="flex justify-between items-center mb-1.5">
@@ -151,11 +179,9 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
             
             {user.isAdmin && <button onClick={() => setIsAdminOpen(true)} className="w-full flex items-center gap-3 px-4 py-2.5 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"><i className="fas fa-shield-virus"></i> Kernel Access</button>}
             
-            {user.isAdmin && (
-              <button onClick={handleUpdateApiKey} className="w-full flex items-center gap-3 px-4 py-2.5 text-green-500 hover:bg-green-500/10 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all">
-                <i className="fas fa-key"></i> Обновить ключ
-              </button>
-            )}
+            <button onClick={handleUpdateApiKey} className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${hasKey ? 'text-green-500 hover:bg-green-500/10' : 'text-red-500 bg-red-500/5 border border-red-500/20'}`}>
+              <i className="fas fa-key"></i> {hasKey ? 'Сменить ключ API' : 'Настроить ключ API'}
+            </button>
 
             <div className={`flex items-center justify-between p-4 rounded-2xl border border-[#30363d] shadow-inner mt-2 ${isStoryMode ? 'bg-[#251b36]' : 'bg-[#161b22]'}`}>
               <div className="flex flex-col">
