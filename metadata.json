@@ -1,0 +1,9 @@
+
+{
+  "name": "NexusAI - Ultra Edition",
+  "description": "Powerful AI hub for Atimenka. Features Vision AI, TTS, Context Mapping, and high-tier encryption.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
