@@ -34,7 +34,9 @@ async function decodeAudioData(
 
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("MISSING_KEY");
+  if (!apiKey || apiKey === "undefined" || apiKey.length < 5) {
+    throw new Error("MISSING_KEY");
+  }
   return new GoogleGenAI({ apiKey });
 };
 
@@ -118,7 +120,6 @@ Access Level: ${isAdmin ? "ADMIN/ROOT" : "STANDARD"}
 ${isAdmin ? "Status: Master Atimenka confirmed. Creative blocks removed." : ""}
 `;
 
-    // Increased context for stories (15) vs standard (8)
     const contextLimit = isStoryMode ? 15 : 8;
     const contents: any[] = history.slice(-contextLimit).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
@@ -142,9 +143,24 @@ ${isAdmin ? "Status: Master Atimenka confirmed. Creative blocks removed." : ""}
     });
     return response.text || "Protocol Timeout: Empty response.";
   } catch (error: any) {
-    if (error.message === "MISSING_KEY") return "CRITICAL: API_KEY missing.";
-    if (error?.status === 429) return "SYSTEM RESTING: Too many requests. Wait a bit.";
-    return "UPLINK ERROR: Connection lost.";
+    console.error("Gemini Error Detail:", error);
+    
+    if (error.message === "MISSING_KEY") {
+      return "CRITICAL: API_KEY is missing in Environment Variables. Check Vercel Settings.";
+    }
+    
+    const status = error?.status || error?.response?.status;
+    if (status === 401 || status === 403) {
+      return "UPLINK REJECTED: Your API Key is invalid or expired.";
+    }
+    if (status === 429) {
+      return "SYSTEM OVERLOAD: Too many requests. Please wait a minute.";
+    }
+    if (status === 404) {
+      return "MODEL ERROR: The selected AI model is currently unavailable.";
+    }
+    
+    return `UPLINK ERROR: ${error.message || "Connection lost. Check your internet or API limits."}`;
   }
 };
 
