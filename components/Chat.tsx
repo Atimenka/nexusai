@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ChatSession, Message } from '../types';
 import { db } from '../services/db';
@@ -40,6 +39,12 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     setMessageCount(total);
   };
 
+  const handleUpdateApiKey = async () => {
+    if ((window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+    }
+  };
+
   const handleSend = async (e?: React.FormEvent, overridePrompt?: string) => {
     if (e) e.preventDefault();
     if ((!input.trim() && !selectedImage && !overridePrompt) || isTyping) return;
@@ -78,7 +83,7 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
 
       if (!currentImg && isImageRequest(userInput)) {
         const url = await generateImage(userInput, isStoryMode);
-        aiResponse = url ? "Visualization task completed." : "Failed to render.";
+        aiResponse = url ? "Visualization task completed." : "Failed to render visualization. Check API Key permissions.";
         aiImg = url || undefined;
       } else {
         aiResponse = await askGemini(userInput, updatedMessages, user.username, user.isAdmin, isStoryMode, currentImg || undefined);
@@ -145,6 +150,13 @@ const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
              )}
             
             {user.isAdmin && <button onClick={() => setIsAdminOpen(true)} className="w-full flex items-center gap-3 px-4 py-2.5 text-yellow-500 hover:bg-yellow-500/10 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"><i className="fas fa-shield-virus"></i> Kernel Access</button>}
+            
+            {user.isAdmin && (
+              <button onClick={handleUpdateApiKey} className="w-full flex items-center gap-3 px-4 py-2.5 text-green-500 hover:bg-green-500/10 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all">
+                <i className="fas fa-key"></i> Обновить ключ
+              </button>
+            )}
+
             <div className={`flex items-center justify-between p-4 rounded-2xl border border-[#30363d] shadow-inner mt-2 ${isStoryMode ? 'bg-[#251b36]' : 'bg-[#161b22]'}`}>
               <div className="flex flex-col">
                 <span className={`text-[9px] font-black uppercase leading-none mb-1 ${isStoryMode ? 'text-purple-500' : 'text-blue-500'}`}>Authenticated</span>
