@@ -1,8 +1,8 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Message } from "../types";
 import { db } from "./db";
 
+// Вспомогательные функции для работы с аудио
 function decode(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -32,24 +32,21 @@ async function decodeAudioData(
   return buffer;
 }
 
-const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "undefined" || apiKey.length < 5) {
-    throw new Error("MISSING_KEY");
-  }
-  return new GoogleGenAI({ apiKey });
+const getApiKey = () => {
+  const key = process.env.API_KEY || "";
+  // Очистка ключа от кавычек и пробелов, которые могут попасть из окружения
+  return key.replace(/['"]+/g, '').trim();
 };
 
 export const speakText = async (text: string, isStory: boolean = false) => {
   try {
-    const ai = getAIClient();
-    const prompt = isStory 
-      ? `Read this story segment with deep emotion and narrative pacing: ${text.substring(0, 600)}`
-      : `Read clearly: ${text.substring(0, 400)}`;
-
+    const apiKey = getApiKey();
+    if (!apiKey) return;
+    
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts: [{ text: text.substring(0, 500) }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -61,7 +58,6 @@ export const speakText = async (text: string, isStory: boolean = false) => {
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
       const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
       const source = audioCtx.createBufferSource();
       source.buffer = audioBuffer;
@@ -69,20 +65,19 @@ export const speakText = async (text: string, isStory: boolean = false) => {
       source.start();
     }
   } catch (error) {
-    console.error("TTS Node Error:", error);
+    console.error("TTS Error:", error);
   }
 };
 
 export const generateImage = async (prompt: string, isStory: boolean = false): Promise<string | null> => {
   try {
-    const ai = getAIClient();
-    const style = isStory 
-      ? "Cinematic concept art, moody lighting, detailed textures, book illustration style"
-      : "High-detail digital art, Nexus Protocol Style";
-      
+    const apiKey = getApiKey();
+    if (!apiKey) return null;
+
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: `${style}: ${prompt}` }] },
+      contents: { parts: [{ text: prompt }] },
       config: { imageConfig: { aspectRatio: isStory ? "16:9" : "1:1" } },
     });
     const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
@@ -101,27 +96,13 @@ export const askGemini = async (
   imageFile?: { data: string, mimeType: string }
 ) => {
   try {
-    const ai = getAIClient();
+    const apiKey = getApiKey();
+    if (!apiKey) throw new Error("API_KEY_MISSING");
+
+    const ai = new GoogleGenAI({ apiKey });
     const settings = db.getSettings();
 
-    const storyInstruction = `
-[STORY FORGE MODE ACTIVE]
-You are a master storyteller and world-builder. 
-- Use rich, descriptive prose and immersive atmosphere.
-- Maintain consistent character development and logical plot progression.
-- If this is a roleplay, react dynamically to the user's actions.
-- Language: Follow the user's language.
-`;
-
-    const systemInstruction = `
-${isStoryMode ? storyInstruction : settings.systemRule}
-Active User: ${username}
-Access Level: ${isAdmin ? "ADMIN/ROOT" : "STANDARD"}
-${isAdmin ? "Status: Master Atimenka confirmed. Creative blocks removed." : ""}
-`;
-
-    const contextLimit = isStoryMode ? 15 : 8;
-    const contents: any[] = history.slice(-contextLimit).map(msg => ({
+    const contents: any[] = history.slice(-10).map(msg => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.content }]
     }));
@@ -136,35 +117,21 @@ ${isAdmin ? "Status: Master Atimenka confirmed. Creative blocks removed." : ""}
       model: "gemini-3-flash-preview",
       contents,
       config: { 
-        systemInstruction, 
-        temperature: isStoryMode ? 0.95 : (isAdmin ? 0.9 : 0.7),
-        topP: 0.9,
+        systemInstruction: isStoryMode ? "You are a master storyteller." : settings.systemRule,
+        temperature: settings.temperature,
       }
     });
-    return response.text || "Protocol Timeout: Empty response.";
+    return response.text || "No response from Nexus.";
   } catch (error: any) {
-    console.error("Gemini Error Detail:", error);
-    
-    if (error.message === "MISSING_KEY") {
-      return "CRITICAL: API_KEY is missing in Environment Variables. Check Vercel Settings.";
+    console.error("Gemini Error:", error);
+    if (error.message?.includes("400")) {
+      return "ОШИБКА 400: Ключ недействителен. Пожалуйста, используйте кнопку 'Обновить ключ' в панели управления.";
     }
-    
-    const status = error?.status || error?.response?.status;
-    if (status === 401 || status === 403) {
-      return "UPLINK REJECTED: Your API Key is invalid or expired.";
-    }
-    if (status === 429) {
-      return "SYSTEM OVERLOAD: Too many requests. Please wait a minute.";
-    }
-    if (status === 404) {
-      return "MODEL ERROR: The selected AI model is currently unavailable.";
-    }
-    
-    return `UPLINK ERROR: ${error.message || "Connection lost. Check your internet or API limits."}`;
+    return `ОШИБКА UPLINK: ${error.message}`;
   }
 };
 
 export const isImageRequest = (prompt: string): boolean => {
-  const triggers = ["нарисуй", "картинка", "фото", "draw", "generate image", "image", "создай фото", "иллюстрация"];
+  const triggers = ["нарисуй", "картинка", "фото", "draw", "image"];
   return triggers.some(t => prompt.toLowerCase().includes(t));
 };
